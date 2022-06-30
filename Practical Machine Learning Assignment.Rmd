@@ -1,0 +1,175 @@
+---
+title: "Reproducibility"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement -- a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerators on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+
+The training data for this project are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+The data for this project come from this source: <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har>. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+```{r setup, include=FALSE}
+chooseCRANmirror(graphics=FALSE, ind=1)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo = TRUE}
+install.packages('lattice')
+install.packages('ggplot2')
+install.packages('caret')
+install.packages('kernlab')
+install.packages('rattle')
+install.packages('corrplot')
+install.packages("rpart")
+install.packages("rpart.plot")
+install.packages('contrib.url')
+```
+
+```{r echo = TRUE}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(kernlab)
+library(rattle)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+```
+
+```{r}
+# Set seed for reproducability
+set.seed(123)
+```
+
+## Download data
+
+The `pml-training.csv` data is used as training data. The `pml-test.csv` data is used as test data.
+
+```{r echo = TRUE}
+traincsv <- read.csv("./pml-training.csv")
+testcsv <- read.csv("./pml-testing.csv")
+
+dim(traincsv)
+dim(testcsv)
+```
+
+## Data processing
+
+In this section basic transformation has been performed to clean data and remove NA values and not relevant variables.
+
+```{r}
+# Cleaning the Data
+
+traincsv <- traincsv[,colMeans(is.na(traincsv)) < .9] #removing mostly na columns
+traincsv <- traincsv[,-c(1:7)] #removing metadata which is irrelevant to the outcome
+
+```
+
+```{r}
+nonZeroValue <- nearZeroVar(traincsv) # Removing Variables which are having nearly zero variance
+traincsv <- traincsv[,-nonZeroValue]
+dim(traincsv)
+```
+
+```{r}
+inTrain <- createDataPartition(y=traincsv$classe, p=0.7, list=F)
+trainData <- traincsv[inTrain,]
+validData <- traincsv[-inTrain,]
+```
+
+## Creating and Testing the Models
+
+```{r}
+control <- trainControl(method="cv", number=3, verboseIter=F)
+```
+
+## Decision Tree
+
+```{r echo = TRUE}
+trainModel <- train(classe~., data=trainData, method="rpart", trControl = control, tuneLength = 5)
+
+rpart.plot(trainModel$finalModel) # instead of fancyRpartPlot
+
+predModel <- predict(trainModel, validData)
+cmtrees <- confusionMatrix(predModel, factor(validData$classe))
+cmtrees
+```
+
+We can see that the prediction accuracy is 50% which is not upto the desired level.
+
+## Random Forest
+
+```{r}
+
+trainRF <- train(classe~., data=trainData, method="rf", trControl = control, tuneLength = 5)
+
+predRF <- predict(trainRF, validData)
+cmrf <- confusionMatrix(predRF, factor(validData$classe))
+cmrf
+```
+
+From the Confusion Matrix, we can clearly see that the prediction accuracy of Random Forest model is 99% which is satisfactory.
+
+## Gradient Boosted Trees
+
+```{r echo = TRUE}
+
+trainGbm <- train(classe~., data=trainData, method="gbm", trControl = control, tuneLength = 5, verbose = F)
+
+predGbm <- predict(trainGbm, validData)
+cmgbm <- confusionMatrix(predGbm, factor(validData$classe))
+cmgbm
+```
+
+A gradient boosted model with multinomial loss function. 150 iterations were performed. There were 51 predictors of which 42 had non-zero influence.
+
+```{r}
+# Support Vector Machine
+trainSvm <- train(classe~., data=trainData, method="svmLinear", trControl = control, tuneLength = 5, verbose = F)
+
+predSvm <- predict(trainSvm, validData)
+cmsvm <- confusionMatrix(predSvm, factor(validData$classe))
+cmsvm
+```
+
+Results (Accuracy & Out of Sample Error) table(cmsvm,cmgbm,cmrf,cmtrees) The best model is the Random Forest model, with 0.9957519 accuracy and 0.0042481 out of sample error rate. We find that to be a sufficient enough model to use for our test sets.
+
+# Predictions on Test Set
+
+```{r}
+pred <- predict(trainRF, testcsv)
+print(pred)
+```
+
+# Appendix
+
+correlation matrix of variables in training set
+
+```{r}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="color")
+```
+
+# Plotting the models
+
+```{r}
+plot(trainModel)
+
+plot(trainRF)
+
+plot(trainGbm)
+
+```
